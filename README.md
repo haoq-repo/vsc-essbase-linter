@@ -1,9 +1,9 @@
 # Essbase Calc Script Linter and Syntax support
 
 ## Install
-1. Download zip
-2. Copy folder into `%USERPROFILE%\.vscode\extensions`
-3. Reload VSCode
+1. Clone into local repository
+2. Run `vsce package`
+3. Run `code --install-extension .\vsc-essbase-linter-0.0.1.vsix'
 
 ## Supported error checking
 
