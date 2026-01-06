@@ -1,0 +1,45 @@
+
+{
+  "name": "vsc-essbase-linter",
+  "displayName": "vsc-essbase-linter",
+  "publisher": "hq",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.95.0" },
+  "categories": ["Linters"],
+  "activationEvents": ["onLanguage:essbase"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "essbase",
+        "aliases": ["Essbase Calc Script"],
+        "extensions": [".csc"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "essbase",
+        "scopeName": "source.essbase",
+        "path": "./syntaxes/essbase.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "essbaseLinter.fixMissingEndfix",
+        "title": "Essbase: Insert ENDFIX for last unmatched FIX"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -p ./ -w",
+    "test": "echo \"(optional) add tests later\""
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.0.0",
+    "tslint": "^6.1.0"
+  }
+}
