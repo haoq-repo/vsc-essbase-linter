@@ -1,9 +1,10 @@
 /**
  * rules.ts
- * Rule framework + FIX/ENDFIX balance + IF/ELSEIF/ELSE/ENDIF balance.
+ * Rule framework + FIX/ENDFIX, IF/ELSEIF/ELSE/ENDIF balance, and rogue commas.
  */
 
 import type { Token } from './parser';
+import { findCommaIssues } from './parser';
 
 export type Severity = 'error' | 'warning' | 'info';
 
@@ -13,7 +14,7 @@ export interface RuleOptions {
 }
 
 export interface RuleDiagnostic {
-  code: string; // e.g. 'essbase.if.missingEndif'
+  code: string; // e.g. 'essbase.comma.trailing' or 'essbase.comma.double'
   message: string;
   severity: Severity;
   start: { line: number; character: number };
@@ -23,7 +24,8 @@ export interface RuleDiagnostic {
 export interface Rule {
   id: string;
   description: string;
-  apply(tokens: Token[], options: RuleOptions): RuleDiagnostic[];
+  /** Optional context text can be passed by linter for text-level rules */
+  apply(tokens: Token[], options: RuleOptions, context?: { text: string }): RuleDiagnostic[];
 }
 
 /* ------------------------ FIX/ENDFIX balance ------------------------ */
@@ -74,8 +76,6 @@ export const ifElseEndifBalanceRule: Rule = {
   description: 'IF chains must be balanced; ELSEIF is allowed inside IF; only one ELSE per IF; ENDIF must close an IF.',
   apply(tokens: Token[], options: RuleOptions): RuleDiagnostic[] {
     const diags: RuleDiagnostic[] = [];
-
-    // Track IF stacks; each frame records whether an ELSE has appeared.
     const stack: { ifToken: Token; elseSeen: boolean }[] = [];
 
     for (const t of tokens) {
@@ -83,7 +83,6 @@ export const ifElseEndifBalanceRule: Rule = {
         case 'IF':
           stack.push({ ifToken: t, elseSeen: false });
           break;
-
         case 'ELSEIF':
           if (stack.length === 0) {
             diags.push({
@@ -93,11 +92,8 @@ export const ifElseEndifBalanceRule: Rule = {
               start: { line: t.line, character: t.column },
               end:   { line: t.line, character: t.column + t.lexeme.length }
             });
-          } else {
-            // valid: multiple ELSEIF allowed; does not consume/close IF and does not set elseSeen
           }
           break;
-
         case 'ELSE':
           if (stack.length === 0) {
             diags.push({
@@ -122,7 +118,6 @@ export const ifElseEndifBalanceRule: Rule = {
             }
           }
           break;
-
         case 'ENDIF':
           if (stack.length === 0) {
             diags.push({
@@ -136,14 +131,11 @@ export const ifElseEndifBalanceRule: Rule = {
             stack.pop();
           }
           break;
-
         default:
-          // other tokens ignored
           break;
       }
     }
 
-    // Any remaining IF needs an ENDIF
     for (const frame of stack) {
       const unmatched = frame.ifToken;
       diags.push({
@@ -159,11 +151,46 @@ export const ifElseEndifBalanceRule: Rule = {
   }
 };
 
+/* ---------------- Rogue comma rule ---------------- */
+
+export const rogueCommaRule: Rule = {
+  id: 'essbase.syntax.rogueComma',
+  description: 'Detect trailing commas before ) or ] and double commas.',
+  apply(_tokens: Token[], options: RuleOptions, context?: { text: string }): RuleDiagnostic[] {
+    const diags: RuleDiagnostic[] = [];
+    if (!context?.text) return diags;
+
+    for (const issue of findCommaIssues(context.text)) {
+      const severity = options.severity ?? 'warning';
+      if (issue.kind === 'trailing') {
+        diags.push({
+          code: 'essbase.comma.trailing',
+          message: 'Trailing comma before closing bracket/parenthesis.',
+          severity,
+          start: { line: issue.line, character: issue.startCol },
+          end:   { line: issue.line, character: issue.endCol }
+        });
+      } else {
+        // double comma
+        diags.push({
+          code: 'essbase.comma.double',
+          message: 'Consecutive commas detected.',
+          severity,
+          start: { line: issue.line, character: issue.startCol },
+          end:   { line: issue.line, character: issue.endCol }
+        });
+      }
+    }
+
+    return diags;
+  }
+};
+
 /* -------------------- Optional placeholder rule (nesting) -------------------- */
 export const nestedFixOrderRule: Rule = {
   id: 'essbase.fix.nesting',
   description: 'Disallow overlapping FIX blocks (placeholder).',
-  apply(_tokens: Token[], _options: RuleOptions): RuleDiagnostic[] {
+  apply(): RuleDiagnostic[] {
     return [];
   }
 };
@@ -172,5 +199,6 @@ export const nestedFixOrderRule: Rule = {
 export const ALL_RULES: Rule[] = [
   fixEndfixBalanceRule,
   ifElseEndifBalanceRule,
+  rogueCommaRule,
   nestedFixOrderRule
 ];

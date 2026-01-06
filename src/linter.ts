@@ -1,7 +1,8 @@
 /**
  * linter.ts
- * Runs all enabled rules over parser tokens; converts results to VS Code diagnostics.
- * Provides quick fixes for missing ENDFIX and missing ENDIF.
+ * Runs all enabled rules, passes raw text to text-level rules, and adds quick fixes:
+ *  - Remove trailing comma
+ *  - Collapse double commas into a single comma
  */
 
 import * as vscode from 'vscode';
@@ -27,8 +28,9 @@ function getConfig(): { rules: RuleConfig } {
 export function lintDocument(doc: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
   if (doc.languageId !== 'essbase') return;
 
+  const text = doc.getText();
+  const tokens = parseEssbase(text);
   const { rules: ruleConfig } = getConfig();
-  const tokens = parseEssbase(doc.getText());
   const diags: vscode.Diagnostic[] = [];
 
   const toVscodeSeverity = (s: Severity | undefined): vscode.DiagnosticSeverity => {
@@ -54,7 +56,7 @@ export function lintDocument(doc: vscode.TextDocument, collection: vscode.Diagno
   for (const rule of ALL_RULES) {
     const rc = ruleConfig[rule.id] ?? { enabled: true, severity: 'error' };
     if (rc.enabled === false) continue;
-    const res = rule.apply(tokens, rc);
+    const res = rule.apply(tokens, rc, { text });
     res.forEach(push);
   }
 
@@ -84,6 +86,7 @@ export class EssbaseQuickFixProvider implements vscode.CodeActionProvider {
           actions.push(action);
           break;
         }
+
         case 'essbase.if.missingEndif': {
           const action = new vscode.CodeAction('Insert ENDIF', vscode.CodeActionKind.QuickFix);
           const line = diag.range.start.line;
@@ -97,6 +100,31 @@ export class EssbaseQuickFixProvider implements vscode.CodeActionProvider {
           actions.push(action);
           break;
         }
+
+        case 'essbase.comma.trailing': {
+          // Delete the trailing comma
+          const action = new vscode.CodeAction('Remove trailing comma', vscode.CodeActionKind.QuickFix);
+          const edit = new vscode.WorkspaceEdit();
+          edit.delete(document.uri, diag.range);
+          action.edit = edit;
+          action.diagnostics = [diag];
+          action.isPreferred = true;
+          actions.push(action);
+          break;
+        }
+
+        case 'essbase.comma.double': {
+          // Replace the whole range (comma, whitespace, comma) with a single comma
+          const action = new vscode.CodeAction('Collapse double comma to single', vscode.CodeActionKind.QuickFix);
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, diag.range, ',');
+          action.edit = edit;
+          action.diagnostics = [diag];
+          action.isPreferred = true;
+          actions.push(action);
+          break;
+        }
+
         default:
           break;
       }

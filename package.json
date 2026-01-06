@@ -34,9 +34,10 @@
         "essbaseLinter.rules": {
           "type": "object",
           "default": {
-            "essbase.fix.balance":   { "enabled": true,  "severity": "error" },
-            "essbase.if.balance":    { "enabled": true,  "severity": "error" },
-            "essbase.fix.nesting":   { "enabled": false, "severity": "warning" }
+            "essbase.fix.balance":        { "enabled": true,  "severity": "error" },
+            "essbase.if.balance":         { "enabled": true,  "severity": "error" },
+            "essbase.fix.nesting":        { "enabled": true, "severity": "warning" },
+            "essbase.syntax.rogueComma":  { "enabled": true,  "severity": "error" }
           },
           "description": "Enable/disable linter rules and set their severities.",
           "additionalProperties": {
