@@ -4,6 +4,10 @@
   "displayName": "vsc-essbase-linter",
   "publisher": "hq",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/haoq-repo/vsc-essbase-linter.git"
+  },
   "engines": { "vscode": "^1.95.0" },
   "categories": ["Linters"],
   "activationEvents": ["onLanguage:essbase"],
@@ -24,12 +28,27 @@
         "path": "./syntaxes/essbase.tmLanguage.json"
       }
     ],
-    "commands": [
-      {
-        "command": "essbaseLinter.fixMissingEndfix",
-        "title": "Essbase: Insert ENDFIX for last unmatched FIX"
+    "configuration": {
+      "title": "Essbase Linter",
+      "properties": {
+        "essbaseLinter.rules": {
+          "type": "object",
+          "default": {
+            "essbase.fix.balance":   { "enabled": true,  "severity": "error" },
+            "essbase.if.balance":    { "enabled": true,  "severity": "error" },
+            "essbase.fix.nesting":   { "enabled": false, "severity": "warning" }
+          },
+          "description": "Enable/disable linter rules and set their severities.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "enabled":  { "type": "boolean", "default": true },
+              "severity": { "type": "string", "enum": ["error", "warning", "info"], "default": "error" }
+            }
+          }
+        }
       }
-    ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

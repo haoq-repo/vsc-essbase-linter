@@ -1,81 +1,104 @@
-
 /**
  * linter.ts
- *
- * Converts rule diagnostics to VS Code diagnostics, manages the collection,
- * and provides a Quick Fix to insert ENDFIX.
+ * Runs all enabled rules over parser tokens; converts results to VS Code diagnostics.
+ * Provides quick fixes for missing ENDFIX and missing ENDIF.
  */
 
 import * as vscode from 'vscode';
 import { parseEssbase } from './parser';
-import { checkFixEndfixBalance, RuleDiagnostic } from './rules';
+import { ALL_RULES, RuleDiagnostic, Severity } from './rules';
 
 const COLLECTION_NAME = 'essbase-linter';
-
-export const DIAG_CODE_MISSING_ENDFIX = 'essbase.fix.missingEndfix';
-export const DIAG_CODE_UNMATCHED_ENDFIX = 'essbase.fix.unmatchedEndfix';
 
 export function createCollection(): vscode.DiagnosticCollection {
   return vscode.languages.createDiagnosticCollection(COLLECTION_NAME);
 }
 
+type RuleConfig = {
+  [ruleId: string]: { enabled?: boolean; severity?: Severity };
+};
+
+function getConfig(): { rules: RuleConfig } {
+  const cfg = vscode.workspace.getConfiguration('essbaseLinter');
+  const rules = cfg.get<RuleConfig>('rules', {});
+  return { rules };
+}
+
 export function lintDocument(doc: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
   if (doc.languageId !== 'essbase') return;
 
-  const text = doc.getText();
-  const tokens = parseEssbase(text);
-  const ruleDiags = checkFixEndfixBalance(tokens);
+  const { rules: ruleConfig } = getConfig();
+  const tokens = parseEssbase(doc.getText());
+  const diags: vscode.Diagnostic[] = [];
 
-  const toVscodeDiag = (rd: RuleDiagnostic): vscode.Diagnostic => {
-    const range = new vscode.Range(
-      new vscode.Position(rd.start.line, rd.start.character),
-      new vscode.Position(rd.end.line, rd.end.character)
-    );
-
-    const sev =
-      rd.severity === 'error' ? vscode.DiagnosticSeverity.Error :
-      rd.severity === 'warning' ? vscode.DiagnosticSeverity.Warning :
-      vscode.DiagnosticSeverity.Information;
-
-    const d = new vscode.Diagnostic(range, rd.message, sev);
-    d.code = rd.code;
-    d.source = 'Essbase Linter';
-    return d;
+  const toVscodeSeverity = (s: Severity | undefined): vscode.DiagnosticSeverity => {
+    switch (s) {
+      case 'warning': return vscode.DiagnosticSeverity.Warning;
+      case 'info':    return vscode.DiagnosticSeverity.Information;
+      case 'error':
+      default:        return vscode.DiagnosticSeverity.Error;
+    }
   };
 
-  const diagnostics = ruleDiags.map(toVscodeDiag);
-  collection.set(doc.uri, diagnostics);
+  const push = (rd: RuleDiagnostic) => {
+    const range = new vscode.Range(
+      new vscode.Position(rd.start.line, rd.start.character),
+      new vscode.Position(rd.end.line,   rd.end.character)
+    );
+    const d = new vscode.Diagnostic(range, rd.message, toVscodeSeverity(rd.severity));
+    d.code = rd.code;
+    d.source = 'Essbase Linter';
+    diags.push(d);
+  };
+
+  for (const rule of ALL_RULES) {
+    const rc = ruleConfig[rule.id] ?? { enabled: true, severity: 'error' };
+    if (rc.enabled === false) continue;
+    const res = rule.apply(tokens, rc);
+    res.forEach(push);
+  }
+
+  collection.set(doc.uri, diags);
 }
 
-/**
- * Quick Fix provider: for 'missing ENDFIX', insert ENDFIX on the line after FIX,
- * preserving indentation of the FIX line.
- */
-export class MissingEndfixQuickFixProvider implements vscode.CodeActionProvider {
+/* ------------------------------ Quick fixes ------------------------------ */
+
+export class EssbaseQuickFixProvider implements vscode.CodeActionProvider {
   public static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix];
 
-  provideCodeActions(
-    document: vscode.TextDocument,
-    _range: vscode.Range,
-    context: vscode.CodeActionContext
-  ): vscode.CodeAction[] {
+  provideCodeActions(document: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
     const actions: vscode.CodeAction[] = [];
 
     for (const diag of context.diagnostics) {
-      if (diag.code === DIAG_CODE_MISSING_ENDFIX) {
-        const fix = new vscode.CodeAction('Insert ENDFIX', vscode.CodeActionKind.QuickFix);
-        fix.diagnostics = [diag];
-        fix.isPreferred = true;
-
-        const fixLine = diag.range.start.line;
-        const insertLine = Math.min(fixLine + 1, document.lineCount);
-        const indent = getLeadingWhitespace(document.lineAt(fixLine).text);
-
-        const edit = new vscode.WorkspaceEdit();
-        edit.insert(document.uri, new vscode.Position(insertLine, 0), `${indent}ENDFIX\n`);
-        fix.edit = edit;
-
-        actions.push(fix);
+      switch (diag.code) {
+        case 'essbase.fix.missingEndfix': {
+          const action = new vscode.CodeAction('Insert ENDFIX', vscode.CodeActionKind.QuickFix);
+          const line = diag.range.start.line;
+          const indent = leadingWS(document.lineAt(line).text);
+          const pos = new vscode.Position(Math.min(line + 1, document.lineCount), 0);
+          const edit = new vscode.WorkspaceEdit();
+          edit.insert(document.uri, pos, `${indent}ENDFIX\n`);
+          action.edit = edit;
+          action.diagnostics = [diag];
+          action.isPreferred = true;
+          actions.push(action);
+          break;
+        }
+        case 'essbase.if.missingEndif': {
+          const action = new vscode.CodeAction('Insert ENDIF', vscode.CodeActionKind.QuickFix);
+          const line = diag.range.start.line;
+          const indent = leadingWS(document.lineAt(line).text);
+          const pos = new vscode.Position(Math.min(line + 1, document.lineCount), 0);
+          const edit = new vscode.WorkspaceEdit();
+          edit.insert(document.uri, pos, `${indent}ENDIF\n`);
+          action.edit = edit;
+          action.diagnostics = [diag];
+          action.isPreferred = true;
+          actions.push(action);
+          break;
+        }
+        default:
+          break;
       }
     }
 
@@ -83,7 +106,7 @@ export class MissingEndfixQuickFixProvider implements vscode.CodeActionProvider 
   }
 }
 
-function getLeadingWhitespace(lineText: string): string {
-  const m = /^(\s*)/.exec(lineText);
+function leadingWS(text: string): string {
+  const m = /^(\s*)/.exec(text);
   return m ? m[1] : '';
 }
