@@ -2,7 +2,7 @@
 
 ## Install
 1. Download zip
-2. Copy folder into %USERPROFILE%\.vscode\extensions 
+2. Copy folder into `%USERPROFILE%\.vscode\extensions`
 3. Reload VSCode
 
 ## Supported error checking
